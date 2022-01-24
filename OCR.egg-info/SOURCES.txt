@@ -1,0 +1,7 @@
+README.md
+setup.py
+OCR.egg-info/PKG-INFO
+OCR.egg-info/SOURCES.txt
+OCR.egg-info/dependency_links.txt
+OCR.egg-info/requires.txt
+OCR.egg-info/top_level.txt

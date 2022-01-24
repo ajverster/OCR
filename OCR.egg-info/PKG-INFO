@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: OCR
+Version: 0.1.0
+Summary: UNKNOWN
+Home-page: https://github.com/ajverster/OCR/tree/main
+Author: ['Adrian Verster']
+Author-email: adrian.verster@hc-sc.gc.ca
+License: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >3.6
+Description-Content-Type: text/markdown
+
+This library contains the code required to do OCR of grocery products
+
+
