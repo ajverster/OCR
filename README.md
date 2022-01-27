@@ -1,6 +1,8 @@
 This module contains the code required to do OCR of grocery products. The best code is is NFT_OCR which is used to extract nutrition information from images of NFTs, but there are also modules for doing OCR on Ingredient lists and UPC codes.
 
-### Details
+# Details
+
+### NFTs
 
 This uses tesseract to extract nutrition information out of images of NFTs. There are a number of preprocessing steps that are worth describing:
 
@@ -10,22 +12,22 @@ This uses tesseract to extract nutrition information out of images of NFTs. Ther
 
 After this preprocessing, which is optional, the code uses tesseract and then attempts to read and organize the results.
 
-# Ingredients
+### Ingredients
 
 When applied to ingredients lists the method attempts to extract the ingredients lists, split the french and english versions, and applies a spell correction based on a library of known ingredients words
 
-# UPC
+### UPC
 
 Preprocessing attemps to remove the vertical bars of the UPC code before running the OCR. The two smaller numbers to the left and right can be a problem so the code attemps to crop the image and runs tesseract on those subimages.
 
 
-### Requirements
+# Requirements
 This requires tesseract version 4 to be installed and available in the path. There are fined tuned libraries specific for the task in OCR/data/.
 The rest of the requirements are listed in the setup.py file and will be installed automatically
 Modules other than the NFT module, which depend on google's API instead of tesseract, will require you to obtain an API key (a json file) and put its path in the GOOGLE_APPLICATION_CREDENTIALS environmental variable.
 
 
-### Installation
+# Installation
 
 ```pip install .```
 
@@ -36,9 +38,9 @@ There are a couple of OCR images I've included in tests/test_images/
 ```nosetests tests/test_OCR.py```
 
 
-### Usage
+# Usage
 
-# NFTs
+### NFTs
 
 ```from OCR import NFT_OCR
 
@@ -50,7 +52,7 @@ df = info.return_df()
 df_full = NFT_OCR.ocr_full_dir(indir, unwrap=True, preprocess=True)
 ```
 
-# Ingredients
+### Ingredients
 
 ```
 from OCR import Ingredients_OCR
@@ -62,7 +64,7 @@ ingredients_images = Path(indir).glob("*ING.jpg")
 df_ingr = Ingredients_OCR.ocr_all_ingredients(ingredients_images)
 ```
 
-# UPC codes
+### UPC codes
 ```
 from OCR import UPC_OCR
 from pathlib import Path
@@ -73,7 +75,7 @@ upc_images = Path(indir).glob("*ING.jpg")
 df_upc, images_all = UPC_OCR.do_full_images(upc_images)
 ```
 
-# Other (Eg. Front of Package, Expiry dates)
+### Other (Eg. Front of Package, Expiry dates)
 
 ```
 
