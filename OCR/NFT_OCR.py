@@ -1462,7 +1462,7 @@ def preprocess_full(infile, target_width=1000, mode="binary", thresh_val=150, ke
         image_arr = cv2.imread(infile)
 
     # Third, pre-process
-    img_worker = ImagePreprocesser(None, image_arr)
+    img_worker = NFT_PreProcessing.ImagePreprocesser(None, image_arr)
     img_worker.crop_white()
     img_worker.resize(target_width)
     img_worker.threshold(mode=mode, cutoff=thresh_val)
@@ -1479,7 +1479,8 @@ def preprocess_full(infile, target_width=1000, mode="binary", thresh_val=150, ke
     return img_worker.img, flag_composite, unwarp_stats
 
 
-def run_ocr_and_preprocess(infile, target_width=1000, mode="binary", thresh_val=150, kernel_size=1, slow_mode=False, unwrap=True,
+def run_ocr_and_preprocess(infile, target_width=1000, mode="binary", thresh_val=150, kernel_size=1,
+                           slow_mode=False, unwrap=True, preprocess=True,
             trained_dir=pkg_resources.resource_filename('OCR', 'data/'),
             trained_name='nutrienttraining_int'):
     """
@@ -1490,7 +1491,11 @@ def run_ocr_and_preprocess(infile, target_width=1000, mode="binary", thresh_val=
     if not Path(infile).exists():
         return None, None, None, "missing"
 
-    img, flag_preprocess, unwarp_stats = preprocess_full(infile, target_width=target_width, mode=mode, thresh_val=thresh_val,kernel_size=kernel_size, slow_mode=slow_mode, unwrap=unwrap)
+    if preprocess:
+        img, flag_preprocess, unwarp_stats = preprocess_full(infile, target_width=target_width, mode=mode, thresh_val=thresh_val,kernel_size=kernel_size, slow_mode=slow_mode, unwrap=unwrap)
+    else:
+        img = cv2.imread(infile)
+        flag_preprocess = []
     ocr, info, flag_ocr = run_ocr_image(img, trained_dir=trained_dir, trained_name=trained_name)
 
     return ocr, info, img, flag_preprocess + flag_ocr
@@ -1515,13 +1520,12 @@ def run_ocr_image(img, trained_dir=pkg_resources.resource_filename('OCR', 'data/
     return ocr, info, ["fine"]
 
 
-def add_border(img):
+def add_border(img, bordersize = 10):
     """
     Adds a white border to an image
     :param img:
     :return:
     """
-    bordersize = 10
     border = cv2.copyMakeBorder(
         img,
         top=bordersize,
@@ -1533,122 +1537,6 @@ def add_border(img):
     )
     return border
 
-
-
-class ImagePreprocesser():
-    """
-    Class that performs pre-processing on an image to prepare it for OCR
-    """
-    def __init__(self, infile=None, img=None):
-        # Load the image
-        if infile is not None:
-            self.img = cv2.imread(str(infile))
-        else:
-            assert img is not None
-            self.img=img
-
-    def process(self):
-        """
-        Runs all the pre-processing steps
-        :return:
-        """
-        self.crop_white()
-        self.resize()
-        self.close()
-        self.threshold()
-        self.close()
-
-    def resize(self, target_width = 400):
-        """
-        Resize an image to target a width of 2,000 pixels
-        :param target_width:
-        :return:
-        """
-        if True:
-            scale_factor = target_width / self.img.shape[1]
-            width = int(self.img.shape[1] * scale_factor)
-            height = int(self.img.shape[0] * scale_factor)
-            dim = (width, height)
-            self.img = cv2.resize(self.img, dim)
-
-    def convert_to_gray(self, img):
-        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    def convert_to_rgb(self, img):
-        return cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-
-    def threshold(self, mode = "tozero", cutoff=None, invert=False, block_size=25, C=25):
-        """
-        Threshold an image
-        :param cutoff:
-        :param binary:
-        :return:
-        """
-        grayimg = self.convert_to_gray(self.img)
-        if invert:
-            grayimg = 255 - grayimg
-        if cutoff is None:
-            cutoff = filters.threshold_otsu(grayimg) / 2
-        if mode == "binary":
-            ret2, th = cv2.threshold(grayimg, cutoff, 255, cv2.THRESH_BINARY)
-        elif mode == "adaptive":
-            th = cv2.adaptiveThreshold(grayimg, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, C)
-        elif mode == "tozero":
-            ret2, th= cv2.threshold(grayimg, cutoff, 255, cv2.THRESH_TOZERO)
-        if invert:
-            th = 255-th
-        self.img = self.convert_to_rgb(th)
-
-    def close(self, kernel_size=2):
-        """
-        runs morphologyEx
-        :param kernel_size:
-        :return:
-        """
-        kernel = np.ones((kernel_size, kernel_size), np.uint8)
-        self.img = cv2.morphologyEx(self.img, cv2.MORPH_CLOSE, kernel)
-
-    def write_img(self):
-        """
-        Writes an image to a tempfile
-        :return:
-        """
-        outfile = tempfile.NamedTemporaryFile(suffix=".jpg")
-        cv2.imwrite(outfile.name, self.img)
-        return outfile
-
-    def crop_white(self):
-        """
-        Crops white border at the edge of the image
-        :return:
-        """
-        # Left to right
-        cutoff_l = 0
-        for i in range(self.img.shape[0]):
-            if self.img[i, :, :].min() < 250:
-                cutoff_l = i
-                break
-
-        # right to left
-        cutoff_r = 0
-        for i in range(self.img.shape[0], 0, -1):
-            if self.img[(i - 1), :, :].min() < 250:
-                cutoff_r = i
-                break
-
-        cutoff_t = 0
-        for i in range(self.img.shape[1]):
-            if self.img[:, i, :].min() < 250:
-                cutoff_t = i
-                break
-
-        cutoff_b = 0
-        for i in range(self.img.shape[1], 0, -1):
-            if self.img[:, (i - 1), :].min() < 250:
-                cutoff_b = i
-                break
-
-        self.img = self.img[cutoff_l:cutoff_r, cutoff_t:cutoff_b, :]
 
 
 def debugging_show_crops(infile, indir_training_files, trained_name):
@@ -1684,9 +1572,9 @@ def debugging_show_crops(infile, indir_training_files, trained_name):
     return img_crop
 
 
-def ocr_full_dir(indir, unwrap=True):
-    for infile in Path(indir).glob("*.jpg"):
-        ocr, info, img, flag = run_ocr_and_preprocess(infile, unwrap=unwrap)
+def ocr_full_dir(indir, unwrap=True, preprocess=True, img_suffix="jpg"):
+    for infile in Path(indir).glob("*.{}".format(img_suffix)):
+        ocr, info, img, flag = run_ocr_and_preprocess(infile, unwrap=unwrap, preprocess=preprocess)
         df = info.return_df()
         df["infile"] = infile
     return df
@@ -1699,6 +1587,7 @@ if __name__ == "__main__":
     parser.add_argument('-i','--infile', help='path to the image of a nutrition facts table that you want to extract')
     parser.add_argument('-d','--indir', help='path to the directory of nutrition facts table images you want to extract')
     parser.add_argument('-o','--outfile', help='path to the outfile you wish to write')
+    parser.add_argument('-p','--preprocess', default=False, action="store_true", help="Do you want to run pre-processing? This has been tuned for images of a certain quality and this might make your results worse.")
     parser.add_argument('-w','--unwrap', default=False, action="store_true", help='Whether your NFTs include those possibly on a cylinder that need to be unwraped. Slows the whole thing down.')
 
     args = parser.parse_args()
@@ -1706,11 +1595,11 @@ if __name__ == "__main__":
     assert int(re.search('tesseract ([0-9]{1})\.', subprocess.check_output(['tesseract', '--version']).decode('utf-8')).group(1)) >= 4, 'Minimum tesseract version is 4.0'
 
     if args.task == "single_image":
-        ocr, info, img, flag = run_ocr_and_preprocess(args.infile, unwrap=args.unwrap)
+        ocr, info, img, flag = run_ocr_and_preprocess(args.infile, unwrap=args.unwrap,preprocess=args.preprocess)
         df = info.return_df()
         df.to_excel(args.outfile)
     elif args.task == "full":
-        df_full = ocr_full_dir(args.indir, unwrap=args.unwrap)
+        df_full = ocr_full_dir(args.indir, unwrap=args.unwrap, preprocess=args.preprocess)
         df_full.to_excel(args.outfile)
     else:
         raise Exception("Invalid task")

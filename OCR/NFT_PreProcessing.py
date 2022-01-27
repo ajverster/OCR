@@ -33,7 +33,7 @@ class NFTBoxDetection():
         :return:
         """
         df_ingredients = pd.read_excel(pkg_resources.resource_filename('OCR', 'data/df_ingredients.xlsx'))
-        all_ingr_lists = df_ingredients["value"]
+        all_ingr_lists = df_ingredients["ingredients"]
         self.ingr_words = set()
         for ingr_list in all_ingr_lists:
             if pd.isnull(ingr_list):
@@ -292,3 +292,120 @@ def draw_image_lines_boxes(infile, boxes, lines):
         cv2.line(image, (x1, y1), (x2, y2), (20, 220, 20), 2)
 
     return image
+
+
+class ImagePreprocesser():
+    """
+    Class that performs pre-processing on an image to prepare it for OCR
+    """
+    def __init__(self, infile=None, img=None):
+        # Load the image
+        if infile is not None:
+            self.img = cv2.imread(str(infile))
+        else:
+            assert img is not None
+            self.img=img
+
+    def process(self):
+        """
+        Runs all the pre-processing steps
+        :return:
+        """
+        self.crop_white()
+        self.resize()
+        self.close()
+        self.threshold()
+        self.close()
+
+    def resize(self, target_width = 400):
+        """
+        Resize an image to target a width of 2,000 pixels
+        :param target_width:
+        :return:
+        """
+        if True:
+            scale_factor = target_width / self.img.shape[1]
+            width = int(self.img.shape[1] * scale_factor)
+            height = int(self.img.shape[0] * scale_factor)
+            dim = (width, height)
+            self.img = cv2.resize(self.img, dim)
+
+    def convert_to_gray(self, img):
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    def convert_to_rgb(self, img):
+        return cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
+    def threshold(self, mode = "tozero", cutoff=None, invert=False, block_size=25, C=25):
+        """
+        Threshold an image
+        :param cutoff:
+        :param binary:
+        :return:
+        """
+        grayimg = self.convert_to_gray(self.img)
+        if invert:
+            grayimg = 255 - grayimg
+        if cutoff is None:
+            cutoff = filters.threshold_otsu(grayimg) / 2
+        if mode == "binary":
+            ret2, th = cv2.threshold(grayimg, cutoff, 255, cv2.THRESH_BINARY)
+        elif mode == "adaptive":
+            th = cv2.adaptiveThreshold(grayimg, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, C)
+        elif mode == "tozero":
+            ret2, th= cv2.threshold(grayimg, cutoff, 255, cv2.THRESH_TOZERO)
+        if invert:
+            th = 255-th
+        self.img = self.convert_to_rgb(th)
+
+    def close(self, kernel_size=2):
+        """
+        runs morphologyEx
+        :param kernel_size:
+        :return:
+        """
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        self.img = cv2.morphologyEx(self.img, cv2.MORPH_CLOSE, kernel)
+
+    def write_img(self):
+        """
+        Writes an image to a tempfile
+        :return:
+        """
+        outfile = tempfile.NamedTemporaryFile(suffix=".jpg")
+        cv2.imwrite(outfile.name, self.img)
+        return outfile
+
+    def crop_white(self):
+        """
+        Crops white border at the edge of the image
+        :return:
+        """
+        # Left to right
+        cutoff_l = 0
+        for i in range(self.img.shape[0]):
+            if self.img[i, :, :].min() < 250:
+                cutoff_l = i
+                break
+
+        # right to left
+        cutoff_r = 0
+        for i in range(self.img.shape[0], 0, -1):
+            if self.img[(i - 1), :, :].min() < 250:
+                cutoff_r = i
+                break
+
+        cutoff_t = 0
+        for i in range(self.img.shape[1]):
+            if self.img[:, i, :].min() < 250:
+                cutoff_t = i
+                break
+
+        cutoff_b = 0
+        for i in range(self.img.shape[1], 0, -1):
+            if self.img[:, (i - 1), :].min() < 250:
+                cutoff_b = i
+                break
+
+        self.img = self.img[cutoff_l:cutoff_r, cutoff_t:cutoff_b, :]
+
