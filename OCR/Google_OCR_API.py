@@ -4,6 +4,7 @@ import io
 import cv2
 import os
 import pandas as pd
+from tqdm import tqdm
 
 def call_ocr(path = None, img = None):
     """
@@ -33,6 +34,13 @@ def combine_block(blocks):
         full_text = full_text + combine_text(para.words)
     return " ".join(full_text)
 
+def get_bounding_boxes(response):
+    verticies = []
+    if len(response.full_text_annotation.pages) == 0:
+        return verticies
+    for block in response.full_text_annotation.pages[0].blocks:
+        verticies.append(get_box_from_verticies(block.bounding_box))
+    return verticies
 
 def get_blocks(response):
     """
@@ -56,15 +64,20 @@ def get_text_annotations(response):
     return results
 
 
-def ocr_file_set(file_list):
+def ocr_file_set(file_list, results = {}):
     """
     Runs the google OCR api on a list of files
     Assumes your infiles are pathlib objects
     """
-    results = {}
-    for infile in file_list:
-        response = call_ocr(infile)
-        results[infile.name] = response
+    assert "GOOGLE_APPLICATION_CREDENTIALS" in os.environ, "Must set the GOOGLE_APPLICATION_CREDENTIALS environmental variable"
+    for infile in tqdm(file_list, desc="running google OCR"):
+        if infile.name in results:
+            continue
+        try:
+            response = call_ocr(infile)
+            results[infile.name] = response
+        except:
+            print("problem with {}".format(str(infile)))
     return results
 
 def get_all_blocks(results):
@@ -86,8 +99,8 @@ def get_box_from_verticies(bounding_box):
     """
     Identifies the verticies from a bounding box
     """
-    x_list = [v.x for v in bounding_box.bounding_poly.vertices]
-    y_list = [v.y for v in bounding_box.bounding_poly.vertices]
+    x_list = [v.x for v in bounding_box.vertices]
+    y_list = [v.y for v in bounding_box.vertices]
     return (min(x_list), min(y_list), max(x_list), max(y_list))
 
 
@@ -95,9 +108,9 @@ def combine_verticies(bbox1 = None, bbox2 = None, vertex1 = None, vertex2 = None
     """
     Combines either two verticies or two bounding boxes
     """
-    if (bbox1 is not None) & (bbox1 is not None):
-        x_list = [v.x for v in bbox1.bounding_poly.vertices] + [v.x for v in bbox2.bounding_poly.vertices]
-        y_list = [v.y for v in bbox1.bounding_poly.vertices] + [v.x for v in bbox2.bounding_poly.vertices]
+    if (bbox1 is not None) & (bbox2 is not None):
+        x_list = [v.x for v in bbox1.vertices] + [v.x for v in bbox2.vertices]
+        y_list = [v.y for v in bbox1.vertices] + [v.x for v in bbox2.vertices]
     else:
         x_list = [vertex1[0], vertex1[2], vertex2[0], vertex2[2]]
         y_list = [vertex1[1], vertex1[3], vertex2[1], vertex2[3]]

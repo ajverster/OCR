@@ -267,7 +267,6 @@ def split_to_words(txt):
     return [item for sublist in words for item in sublist if item != ""]
 
 
-
 def extract_expiry(s):
     """
     Extracts the expiry date from a string

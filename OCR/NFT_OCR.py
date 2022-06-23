@@ -65,8 +65,6 @@ def get_items_on_same_line(data, i, fudge_factor=2, partial_overlap=False, fudge
         if partial_overlap:
             bottom_i = data['top'][i] + data['height'][i]
             bottom_j = data['top'][j] + data['height'][j]
-            #if j == 49:
-            #    qwe
             if (((bottom_i - data['top'][j] > height_use * fudge_fraction) & (data['top'][i] < bottom_j)) |
                     ((bottom_j - data['top'][i] > height_use * fudge_fraction) & (data['top'][j] < bottom_i))):
 
@@ -1589,7 +1587,6 @@ if __name__ == "__main__":
     parser.add_argument('-o','--outfile', help='path to the outfile you wish to write')
     parser.add_argument('-p','--preprocess', default=False, action="store_true", help="Do you want to run pre-processing? This has been tuned for images of a certain quality and this might make your results worse.")
     parser.add_argument('-w','--unwrap', default=False, action="store_true", help='Whether your NFTs include those possibly on a cylinder that need to be unwraped. Slows the whole thing down.')
-
     args = parser.parse_args()
 
     assert int(re.search('tesseract ([0-9]{1})\.', subprocess.check_output(['tesseract', '--version']).decode('utf-8')).group(1)) >= 4, 'Minimum tesseract version is 4.0'

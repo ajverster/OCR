@@ -5,6 +5,7 @@ import tqdm
 import numpy as np
 import pandas as pd
 import pytesseract
+from pathlib import Path
 from OCR import NFT_OCR, NFT_PreProcessing, Google_OCR_API
 import pkg_resources
 
@@ -13,31 +14,38 @@ class UPCWorker():
     This does preprocessing of a UPC image and extracts the releveant text
     """
     def __init__(self):
-        # TODO: Move this to the package
-        #self.tess_data = "/home/averster/Documents/Projects/FLAIME/tesseract_training/upc_codes/output/"
         self.tess_data = pkg_resources.resource_filename('OCR', 'data/')
         self.trained_file = "upc_int"
+        self.left = None
+        self.middle = None
+        self.right = None
 
-    def prep(self, infile, cutoff=150, method="cutoff"):
+    def prep(self, infile, cutoff=150, method="cutoff", threshold=True, do_lower=True):
         """
         Identifies and removes the UPC bars. Crops to the lower 25% of the image
         """
         img = cv2.imread(str(infile))
-        thresh = self.threshold_image(img, cutoff, method=method)
-        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if threshold:
+            img_use = self.threshold_image(img, cutoff, method=method)
+        else:
+            img_use = img
 
-        for i in [i for i, c in enumerate(contours) if self.contour_size(c, thresh)]:
-            thresh = self.paint_white(thresh, contours, i)
-        cut_point = int(thresh.shape[0] * 0.75)
+        if do_lower:
+            contours, hierarchy = cv2.findContours(img_use, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        thresh = thresh[cut_point:, :]
-        return thresh
+            for i in [i for i, c in enumerate(contours) if self.contour_size(c, img_use)]:
+                thresh = self.paint_white(img_use, contours, i)
 
-    def run_google_ocr(self, infile):
+            cut_point = int(img_use.shape[0] * 0.75)
+            img_use = img_use[cut_point:, :]
+        return img_use
+
+    def run_google_ocr(self, infile, cutoff=150, method="cutoff", threshold=True, do_lower=True):
         """
         Preprocesses and runs the OCR
         """
-        self.img = self.prep(infile)
+        assert Path(infile).exists(), "{} not found".format(infile)
+        self.img = self.prep(infile, cutoff, method, threshold, do_lower)
         self.results = Google_OCR_API.call_ocr(img=self.img)
 
     def find_middle(self):
@@ -53,24 +61,22 @@ class UPCWorker():
 
             if len(item_txt) == 10:
                 self.middle = item_txt
-                self.middle_box = Google_OCR_API.get_box_from_verticies(item)
+                self.middle_box = Google_OCR_API.get_box_from_verticies(item.bounding_poly)
                 break
             elif (len(item_txt) == 5) & (len(item_txt_next) == 5):
                 self.middle = item_txt + item_txt_next
-                self.middle_box = Google_OCR_API.combine_verticies(item, self.results.text_annotations[i + 1])
+                self.middle_box = Google_OCR_API.combine_verticies(item.bounding_poly, self.results.text_annotations[i + 1].bounding_poly)
                 break
 
     def find_left_right(self):
         """
         Identifies OCR elements to the left and the right of the self.middle_box
         """
-        self.left = ""
-        self.right = ""
         lefts = []
         rights = []
-        for x in self.results.text_annotations:
-            b = Google_OCR_API.get_box_from_verticies(x)
-            x_numeric = re.sub("[^0-9]+", "", x.description)
+        for item in self.results.text_annotations:
+            b = Google_OCR_API.get_box_from_verticies(item.bounding_poly)
+            x_numeric = re.sub("[^0-9]+", "", item.description)
             if len(x_numeric) != 1:
                 continue
             if Google_OCR_API.determine_direction(b, self.middle_box) == "left":
@@ -168,27 +174,59 @@ class UPCWorker():
         """
         if self.middle is None:
             return None
-        if self.left == "":
+        if self.left is None:
             self.left = "?"
-        if self.right == "":
+        if self.right is None:
             self.right = "?"
         return self.left + self.middle + self.right
 
-    def process_full(self, infile):
+    def find_full(self):
+        code_int = re.sub("[^0-9]","", self.results.text_annotations[0].description)
+        if len(code_int) == 12:
+            self.left = code_int[0]
+            self.middle = code_int[1:-1]
+            self.right = code_int[-1]
+            return True
+        return False
+    
+
+    def process_full(self, infile, cutoff=150, method="cutoff", threshold=True, do_lower=True):
         """
         Main function that will run the whole algorithm
         """
-        self.run_google_ocr(infile)
+        self.run_google_ocr(infile, cutoff, method, threshold, do_lower)
+
+        # First, just try and find the full 12 didgets
+        first_is_full = self.verify_first_is_full()
+        if first_is_full:
+            found_full = self.find_full()
+            if found_full:
+                return self.report_upc()
+        # If that didn't work, find the middle 10, then look for the left and right small didget
         self.find_middle()
+        if self.middle is None:
+            return None
         self.find_left_right()
-        if self.left == "":
+        if self.left is None:
             self.left = self.crop_left_right("left")
-        if self.right == "":
+        if self.right is None:
             self.right = self.crop_left_right("right")
         return self.report_upc()
 
+    def verify_first_is_full(self):
+        if len(self.results.text_annotations) == 0:
+            return False
+        item_full = self.results.text_annotations[0]
+        b_full = Google_OCR_API.get_box_from_verticies(item_full.bounding_poly)
 
-def do_full_images(infile_list):
+        first_is_not_full = False
+        for item in self.results.text_annotations[1:]:
+            b = Google_OCR_API.get_box_from_verticies(item.bounding_poly)
+            if not ((b_full[0] <= b[0]) & (b_full[1] <= b[1]) & (b_full[2] >= b[2]) & (b_full[3] >= b[3])):
+                first_is_not_full = True
+        return not first_is_not_full
+
+def do_full_images(infile_list, cutoffs=[150], method="cutoff", threshold=True, do_lower=True):
     """
     Runs UPC detection on a full list of upc images
     """
@@ -197,7 +235,12 @@ def do_full_images(infile_list):
     file_names = []
     for infile in tqdm.tqdm(infile_list):
         w = UPCWorker()
-        upc_code = w.process_full(infile)
+
+        # Try a few cutoffs
+        for c in cutoffs:
+            upc_code = w.process_full(infile, c, method, threshold, do_lower)
+            if upc_code is not None:
+                break
         images_all.append(w.img)
         upc_codes.append(upc_code)
         file_names.append(infile.name)
