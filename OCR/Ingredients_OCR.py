@@ -42,6 +42,8 @@ def find_ingredients_lists(response, all_ingredients, mismatches=1):
     switch = False
     results = []
     txt = ""
+    if len(response.full_text_annotation.pages) == 0:
+        return [txt]
     for block in response.full_text_annotation.pages[0].blocks:
         block_text = Google_OCR_API.combine_block(block)
         block_text_split = re.split(",|\.|;|:", block_text)
@@ -212,20 +214,35 @@ def check_language(txt):
     return "unclear"
 
 
-def ocr_all_ingredients(ingr_images_list):
-    """
-    Main subroutine to OCR ingredients from a list of images
-    Calls OCR, extracts ingredients, identifies the language and runs the spell correction
-    """
-    results_full = []
+class IngredientsOCR():
+    def __init__(self):
+        self.all_ingredients = load_ingredient_list()
+        self.response_elements = {}
 
-    all_ingredients = load_ingredient_list()
-    # Call the OCR on the full list
-    response_elements = Google_OCR_API.ocr_file_set(ingr_images_list)
-    for infile in response_elements:
-        response = response_elements[infile]
+    def call_google_ocr(self, ingr_images_list):
+        ingr_images_list_sub = [x for x in ingr_images_list if x.name not in self.response_elements]
+        self.response_elements.update(Google_OCR_API.ocr_file_set(ingr_images_list))
+
+    def find_ingredients_all(self, infiles):
+        self.call_google_ocr(infiles)
+        df_ingr_all = pd.DataFrame()
+        for inf in infiles:
+            df_ingr = self.find_ingredients(inf)
+            df_ingr_all = pd.concat([df_ingr_all,df_ingr])
+        return df_ingr_all
+    def find_ingredients(self, infile):
+        if infile.name not in self.response_elements:
+            self.call_google_ocr([infile])
+        response = self.response_elements[infile.name]
+        df_ingr = self.split_ingredients(response, infile.name)
+        df_ingr = self.identify_language(df_ingr)
+        df_ingr = self.spell_correction(df_ingr)
+        return df_ingr
+
+    def split_ingredients(self, response, infile):
         # Find the ingredients strings from the OCR results
-        results = find_ingredients_lists(response, all_ingredients)
+        results_full = []
+        results = find_ingredients_lists(response, self.all_ingredients)
         for ingr_text in results:
             # Split each string into english and french versions
             ingr_text_1, ingr_text_2 = split_ingrdients(ingr_text)
@@ -234,26 +251,34 @@ def ocr_all_ingredients(ingr_images_list):
             else:
                 results_full.append([infile, ingr_text_1])
                 results_full.append([infile, ingr_text_2])
-    df_ingr = pd.DataFrame(results_full, columns=["Filename", "ingr_string"])
+        df_ingr = pd.DataFrame(results_full, columns=["Filename", "ingr_string"])
+        return df_ingr
 
-    # Identify english vs french
-    df_ingr["language"] = [check_language(txt) for txt in df_ingr["ingr_string"].values]
+    def identify_language(self, df_ingr):
+        df_ingr["language"] = [check_language(txt) for txt in df_ingr["ingr_string"].values]
+        return df_ingr
 
-    # Do the spell correction
-    corrected_text = []
-    n_corrections_all = []
-    for (i, dat) in df_ingr.iterrows():
-        if dat["language"] == "english":
-            ingr_string, n_corrections = spell_correct_string(dat["ingr_string"],all_ingredients)
-            corrected_text.append(ingr_string)
-            n_corrections_all.append(n_corrections)
-        else:
-            corrected_text.append(dat["ingr_string"])
-            n_corrections_all.append(0)
+    def spell_correction(self, df_ingr):
+        # Do the spell correction
+        corrected_text = []
+        n_corrections_all = []
+        for (i, dat) in df_ingr.iterrows():
+            if dat["language"] == "english":
+                ingr_string, n_corrections = spell_correct_string(dat["ingr_string"], self.all_ingredients)
+                corrected_text.append(ingr_string)
+                n_corrections_all.append(n_corrections)
+            else:
+                corrected_text.append(dat["ingr_string"])
+                n_corrections_all.append(0)
 
-    df_ingr["ingr_string_corrected"] = corrected_text
-    df_ingr["n_corrections"] = n_corrections_all
-    return df_ingr
+        df_ingr["ingr_string_corrected"] = corrected_text
+        df_ingr["n_corrections"] = n_corrections_all
+        return df_ingr
+
+
+def ocr_all_ingredients(ingr_images_list):
+    ingr = IngredientsOCR()
+    return ingr.find_ingredients_all(ingr_images_list)
 
 
 def split_to_words(txt):
