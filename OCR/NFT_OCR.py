@@ -1085,12 +1085,13 @@ class InfoFinder():
     """
     Works on an OCRWorker to extract nutrient information
     """
-    def __init__(self, ocr, indir_training_files, trained_name):
+    def __init__(self, ocr, indir_training_files, trained_name, drop_nutrients=[]):
 
         self.nutrients = ["fat", "saturated", "trans", "cholesterol", "sodium", "carbohydrate", "fibre", "sugars",
                          "protein", "calories"]
         self.vitamins = ["vitamin a","vitamin c","vitamin e", "iron","calcium", "phosphorus","magnesium","zinc", "potassium"]
         self.terms_oi = self.nutrients + self.vitamins
+        self.terms_oi = [x for x in self.terms_oi if x not in drop_nutrients]
 
         self.results = {}
         for t in self.terms_oi:
@@ -1480,7 +1481,7 @@ def preprocess_full(infile, target_width=1000, mode="binary", thresh_val=150, ke
 def run_ocr_and_preprocess(infile, target_width=1000, mode="binary", thresh_val=150, kernel_size=1,
                            slow_mode=False, unwrap=True, preprocess=True,
             trained_dir=pkg_resources.resource_filename('OCR', 'data/'),
-            trained_name='nutrienttraining_int'):
+            trained_name='nutrienttraining_int', drop_nutrients=["vitamin e"]):
     """
     Main function. Uses OCRWorker to run the OCR and InfoFinder to extract the nutrient information
     :param infile:
@@ -1494,20 +1495,20 @@ def run_ocr_and_preprocess(infile, target_width=1000, mode="binary", thresh_val=
     else:
         img = cv2.imread(infile)
         flag_preprocess = []
-    ocr, info, flag_ocr = run_ocr_image(img, trained_dir=trained_dir, trained_name=trained_name)
+    ocr, info, flag_ocr = run_ocr_image(img, trained_dir=trained_dir, trained_name=trained_name,drop_nutrients=drop_nutrients)
 
     return ocr, info, img, flag_preprocess + flag_ocr
 
 
 def run_ocr_image(img, trained_dir=pkg_resources.resource_filename('OCR', 'data/'),
-            trained_name='nutrienttraining_int'):
+            trained_name='nutrienttraining_int', drop_nutrients=["vitamin e"]):
     ocr = OCRWorker(indir_training_files=trained_dir, trained_name=trained_name)
     ocr.run_ocr(img=img)
 
     if ocr.is_american_nft():
         return None, None, ["american"]
 
-    info = InfoFinder(ocr, indir_training_files=trained_dir, trained_name=trained_name)
+    info = InfoFinder(ocr, indir_training_files=trained_dir, trained_name=trained_name, drop_nutrients=drop_nutrients)
     info.extract_all_info("full")
     df = info.return_df()
     if df.apply(lambda x: any(pd.isnull(x)), 0).any():
